@@ -1,8 +1,8 @@
 mod-ui
 ======
 
-This is my custom fork of the mod-ui repo. It adds a few new possible HTTP requests to get information
-about the current bank & pedalboard, which I'm using in a project to control the MOD seamlessly with a
+This is my custom fork of the mod-ui repo. It adds a few new HTTP requests, as well as a few other changes.
+I'm using it alongside ModMidi (https://github.com/cdstouter/ModMidi), a project to control the MOD seamlessly with a
 Behringer FCB1010 controller. Here's my process to build & deploy the mod-ui package:
 
 First, set up the Docker image, and a few other things::

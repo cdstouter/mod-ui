@@ -33,6 +33,9 @@ Now that the package is built (it's in the dist folder) deploy it to the MOD::
     $ systemctl start mod-ui
     $ mount -o remount,ro /
 
+If you want to see the output of mod-ui for debugging purposes, you can run it like this instead of using systemctl::
+
+    $ mod-ui.run
 
 Original documentation below:
 -----------------------------

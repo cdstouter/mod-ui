@@ -1717,9 +1717,8 @@ class Host(object):
             if diffBypass:
                 addressing = pluginData['addressings'].get(":bypass", None)
                 if addressing is not None:
-                    addressing['value'] = 1.0 if data['bypassed'] else 0.0
-                    if addressing['actuator_uri'] not in used_actuators:
-                        used_actuators.append(addressing['actuator_uri'])
+                    # since the bypass is addressed, don't allow presets to override it
+                    diffBypass = False
 
             # if bypassed, do it now
             if diffBypass and data['bypassed']:
@@ -1727,27 +1726,24 @@ class Host(object):
                 self.bypass(instance, True, None)
 
             if data['preset'] and data['preset'] != pluginData['preset']:
-                self.msg_callback("preset %s %s" % (instance, data['preset']))
-                yield gen.Task(self.preset_load, instance, data['preset'])
-
                 addressing = pluginData['addressings'].get(":presets", None)
-                if addressing is not None:
-                    addressing['value'] = pluginData['mapPresets'].index(data['preset'])
-                    if addressing['actuator_uri'] not in used_actuators:
-                        used_actuators.append(addressing['actuator_uri'])
+
+                # only change the preset if it's not addressed
+                if addressing is None:
+                    self.msg_callback("preset %s %s" % (instance, data['preset']))
+                    yield gen.Task(self.preset_load, instance, data['preset'])
 
             for symbol, value in data['ports'].items():
                 if symbol in pluginData['designations'] or pluginData['ports'].get(symbol, None) in (value, None):
                     continue
 
+                addressing = pluginData['addressings'].get(symbol, None)
+                # if this port is addressed, don't allow presets to override it
+                if addressing is not None:
+                    continue
+
                 self.msg_callback("param_set %s %s %f" % (instance, symbol, value))
                 self.param_set("%s/%s" % (instance, symbol), value, None)
-
-                addressing = pluginData['addressings'].get(symbol, None)
-                if addressing is not None:
-                    addressing['value'] = value
-                    if addressing['actuator_uri'] not in used_actuators:
-                        used_actuators.append(addressing['actuator_uri'])
 
             # if not bypassed (enabled), do it at the end
             if diffBypass and not data['bypassed']:

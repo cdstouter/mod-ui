@@ -1153,6 +1153,18 @@ class PedalboardLoadFromBank(JsonRequestHandler):
         ok = yield gen.Task(SESSION.host.load_bank_pedalboard, bank_id + 1, pedalboard)
         self.write(ok)
 
+class PedalboardCurrent(JsonRequestHandler):
+    def get(self):
+        info = {}
+        info['empty'] = SESSION.host.pedalboard_empty
+        info['modified'] = SESSION.host.pedalboard_modified
+        info['name'] = SESSION.host.pedalboard_name
+        info['path'] = SESSION.host.pedalboard_path
+        info['size'] = SESSION.host.pedalboard_size
+        info['preset'] = SESSION.host.pedalboard_preset
+        info['presets'] = SESSION.host.pedalboard_presets
+        self.write(info)
+
 class PedalboardInfo(JsonRequestHandler):
     def get(self):
         bundlepath = os.path.abspath(self.get_argument('bundlepath'))
@@ -1280,6 +1292,13 @@ class DashboardClean(JsonRequestHandler):
         ok = yield gen.Task(SESSION.reset)
         self.write(ok)
 
+class BankCurrent(JsonRequestHandler):
+    def get(self):
+        if SESSION.host.bank_id > 0 and SESSION.host.bank_id <= len(SESSION.host.banks):
+            self.write(SESSION.host.banks[SESSION.host.bank_id - 1])
+        else:
+            self.write(None)
+
 class BankLoad(JsonRequestHandler):
     def get(self):
         # Banks have only bundle and title of each pedalboard, which is the necessary information for the HMI.
@@ -1318,6 +1337,24 @@ class BankSave(JsonRequestHandler):
         banks = json.loads(self.request.body.decode("utf-8", errors="ignore"))
         save_banks(banks)
         self.write(True)
+
+class TempoGet(JsonRequestHandler):
+    def get(self):
+        self.write(SESSION.host.transport_bpm)
+
+class TempoSet(JsonRequestHandler):
+    @gen.coroutine
+    def post(self):
+        newTempo = float(self.get_argument('bpm'))
+        instance_id = SESSION.host.mapper.get_id('/pedalboard')
+        pluginData  = SESSION.host.plugins.get(instance_id, None)
+        if ':bpm' in pluginData['addressings']:
+          old = pluginData['addressings'][':bpm']
+          response = yield gen.Task(SESSION.web_parameter_address, "/pedalboard/:bpm", old['actuator_uri'], old['label'], old['minimum'], old['maximum'], newTempo, old['steps'])
+          self.write(response)
+        else:
+          SESSION.host.set_transport_bpm(newTempo, True)
+          self.write(True)
 
 class HardwareLoad(JsonRequestHandler):
     def get(self):
@@ -1768,12 +1805,14 @@ application = web.Application(
             (r"/package/uninstall", PackageUninstall),
 
             # pedalboard stuff
+            (r"/pedalboard/current", PedalboardCurrent),
             (r"/pedalboard/list", PedalboardList),
             (r"/pedalboard/save", PedalboardSave),
             (r"/pedalboard/pack_bundle/?", PedalboardPackBundle),
             (r"/pedalboard/load_bundle/", PedalboardLoadBundle),
             (r"/pedalboard/load_remote/*(/[A-Za-z0-9_/]+[^/])/?", PedalboardLoadRemote),
             (r"/pedalboard/load_web/", PedalboardLoadWeb),
+            (r"/pedalboard/load_from_bank/", PedalboardLoadFromBank),
             (r"/pedalboard/info/", PedalboardInfo),
             (r"/pedalboard/remove/", PedalboardRemove),
             (r"/pedalboard/image/(screenshot|thumbnail).png", PedalboardImage),
@@ -1793,8 +1832,13 @@ application = web.Application(
             (r"/pedalpreset/load", PedalboardPresetLoad),
 
             # bank stuff
+            (r"/banks/current", BankCurrent),
             (r"/banks/?", BankLoad),
             (r"/banks/save/?", BankSave),
+            
+            # tempo stuff
+            (r"/tempo/get", TempoGet),
+            (r"/tempo/set", TempoSet),
 
             (r"/auth/nonce/?$", AuthNonce),
             (r"/auth/token/?$", AuthToken),

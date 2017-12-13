@@ -1144,6 +1144,15 @@ class PedalboardLoadWeb(SimpleFileReceiver):
         os.remove(filename)
         callback()
 
+class PedalboardLoadFromBank(JsonRequestHandler):
+    @gen.coroutine
+    def post(self):
+        pedalboard = int(self.get_argument('id'))
+        bank_id = SESSION.host.bank_id
+        # for some reason we expect base 1 banks (because 0 is a special case) but base 0 pedalboards
+        ok = yield gen.Task(SESSION.host.load_bank_pedalboard, bank_id + 1, pedalboard)
+        self.write(ok)
+
 class PedalboardInfo(JsonRequestHandler):
     def get(self):
         bundlepath = os.path.abspath(self.get_argument('bundlepath'))

@@ -2978,6 +2978,68 @@ _:b%i
 
         callback(True, pedalboardsData)
 
+    # alternate version of hmi_load_bank_pedalboard that doesn't
+    # delay - callback is called when the pedalboard is actually loaded
+    def load_bank_pedalboard(self, bank_id, pedalboard_id, callback):
+        logging.info("load bank pedalboard")
+
+        if bank_id < 0 or bank_id > len(self.banks):
+            print("ERROR: Trying to load pedalboard using out of bounds bank id %i" % (bank_id))
+            callback(False)
+            return
+
+        try:
+            pedalboard_id = int(pedalboard_id)
+        except:
+            print("ERROR: Trying to load pedalboard using invalid pedalboard_id '%s'" % (pedalboard_id))
+            callback(False)
+            return
+
+        if bank_id == 0:
+            pedalboards = self.allpedalboards
+            navigateFootswitches = False
+            navigateChannel      = 15
+        else:
+            bank        = self.banks[bank_id-1]
+            pedalboards = bank['pedalboards']
+            navigateFootswitches = bank['navigateFootswitches']
+
+            if "navigateChannel" in bank.keys() and not navigateFootswitches:
+                navigateChannel = int(bank['navigateChannel'])-1
+            else:
+                navigateChannel = 15
+
+        if pedalboard_id < 0 or pedalboard_id >= len(pedalboards):
+            print("ERROR: Trying to load pedalboard using out of bounds pedalboard id %i" % (pedalboard_id))
+            callback(False)
+            return
+
+        bundlepath = pedalboards[pedalboard_id]['bundle']
+
+        def loaded_callback(ok):
+            print("NOTE: Loading of %i:%i finished" % (bank_id, pedalboard_id))
+            self.processing_pending_flag = False
+            self.send_notmodified("feature_enable processing 1")
+            callback(True)
+
+        def load_callback(ok):
+            self.bank_id = bank_id
+            self.load(bundlepath)
+            self.send_notmodified("midi_program_listen %d %d" % (int(not navigateFootswitches), navigateChannel),
+                                  loaded_callback, datatype='boolean')
+
+        def footswitch_callback(ok):
+            self.setNavigateWithFootswitches(navigateFootswitches, load_callback)
+
+        def hmi_clear_callback(ok):
+            self.hmi.clear(footswitch_callback)
+
+        if not self.processing_pending_flag:
+            self.processing_pending_flag = True
+            self.send_notmodified("feature_enable processing 0")
+
+        self.reset(hmi_clear_callback)
+
     def hmi_load_bank_pedalboard(self, bank_id, pedalboard_id, callback):
         logging.info("hmi load bank pedalboard")
 

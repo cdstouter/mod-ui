@@ -1348,12 +1348,12 @@ class TempoSet(JsonRequestHandler):
         newTempo = float(self.get_argument('bpm'))
         instance_id = SESSION.host.mapper.get_id('/pedalboard')
         pluginData  = SESSION.host.plugins.get(instance_id, None)
+        SESSION.host.set_transport_bpm(newTempo, True)
         if ':bpm' in pluginData['addressings']:
           old = pluginData['addressings'][':bpm']
           response = yield gen.Task(SESSION.web_parameter_address, "/pedalboard/:bpm", old['actuator_uri'], old['label'], old['minimum'], old['maximum'], newTempo, old['steps'])
           self.write(response)
         else:
-          SESSION.host.set_transport_bpm(newTempo, True)
           self.write(True)
 
 class HardwareLoad(JsonRequestHandler):

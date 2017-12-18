@@ -32,6 +32,7 @@ from base64 import b64encode
 from collections import OrderedDict
 from random import randint
 from shutil import rmtree
+from tornado.tcpserver import TCPServer
 from tornado import gen, iostream, ioloop
 import os, json, socket, time, logging
 
@@ -122,6 +123,23 @@ class InstanceIdMapper(object):
     # get a string instance from a numeric id
     def get_instance(self, id):
         return self.id_map[id]
+
+# class to handle socket connections from ModMidi
+class ModMidiServer(TCPServer):
+    def __init__(self, message_handler):
+        super(ModMidiServer, self).__init__()
+        self.message_handler = message_handler
+    @gen.coroutine
+    def handle_stream(self, stream, address):
+        print('ModMidiServer handle_stream starting')
+        while True:
+            try:
+                data = yield stream.read_until(b"\n")
+                return_data = yield self.message_handler(data)
+                yield stream.write(return_data)
+            except iostream.StreamClosedError:
+                print('ModMidiServer stream closed')
+                break
 
 class Host(object):
     DESIGNATIONS_INDEX_ENABLED   = 0
@@ -528,6 +546,7 @@ class Host(object):
     def init_host(self):
         self.init_jack()
         self.open_connection_if_needed(None)
+        self.start_modmidi_server()
 
         # Disable plugin processing while initializing
         yield gen.Task(self.send_notmodified, "feature_enable processing 0", datatype='boolean')
@@ -617,6 +636,86 @@ class Host(object):
                 "mapPresets"  : []
             }
         }
+    
+    @gen.coroutine
+    def modmidi_handler(self, data):
+        try:
+            message = data.decode('utf-8').strip()
+        except:
+            return json.dumps({'error', 'error while decoding input'}).encode('utf-8')
+
+        if len(message) == 0:
+            return json.dumps({}).encode('utf-8')
+
+        try:
+          message = message.split(' ', 1)
+          command = message[0]
+          if len(message) > 1:
+              body = json.loads(message[1])
+          else:
+              body = None
+        except:
+            return json.dumps({'error': 'error decoding JSON'}).encode('utf-8')
+        
+        ret_val = {}
+        
+        if command == 'get_bpm':
+            ret_val['bpm'] = self.transport_bpm
+            ret_val['okay'] = True
+        elif command == 'set_bpm':
+            try:
+                bpm = body['bpm']
+            except:
+                return json.dumps({'error', 'missing bpm value'}).encode('utf-8')
+            if bpm != self.transport_bpm:
+                self.set_transport_bpm(bpm, True)
+            ret_val['okay'] = True
+        elif command == 'get_bank':
+            if self.bank_id > 0 and self.bank_id <= len(self.banks):
+                ret_val['bank'] = self.banks[self.bank_id - 1]
+            else:
+                ret_val['bank'] = []
+            ret_val['okay'] = True
+        elif command == 'get_presets':
+            presets = self.pedalboard_presets
+            presets = dict((i, presets[i]['name']) for i in range(len(presets)) if presets[i] is not None)
+            ret_val['presets'] = presets
+            ret_val['okay'] = True
+        elif command == 'get_pedalboard':
+            info = {}
+            info['empty'] = self.pedalboard_empty
+            info['modified'] = self.pedalboard_modified
+            info['name'] = self.pedalboard_name
+            info['path'] = self.pedalboard_path
+            info['size'] = self.pedalboard_size
+            info['preset'] = self.pedalboard_preset
+            info['presets'] = self.pedalboard_presets
+            ret_val['pedalboard'] = info
+            ret_val['okay'] = True
+        elif command == 'load_preset':
+            try:
+                idx = body['id']
+            except:
+                return json.dumps({'error', 'missing id value'}).encode('utf-8')
+            ok = yield gen.Task(self.pedalpreset_load, idx)
+            ret_val['okay'] = ok
+        elif command == 'load_pedalboard':
+            try:
+                pedalboard = body['id']
+            except:
+                return json.dumps({'error', 'missing id value'}).encode('utf-8')
+            # for some reason we expect base 1 banks (because 0 is a special case) but base 0 pedalboards
+            ok = yield gen.Task(self.load_bank_pedalboard, self.bank_id + 1, pedalboard)
+            ret_val['okay'] = ok
+        else:
+            ret_val['error'] = 'unknown command'
+        
+        return json.dumps(ret_val).encode('utf-8')
+    
+    def start_modmidi_server(self):
+        print('Starting ModMidi server, listening on port 7777')
+        server = ModMidiServer(self.modmidi_handler)
+        server.listen(7777)
 
     def open_connection_if_needed(self, websocket):
         if self.readsock is not None and self.writesock is not None:

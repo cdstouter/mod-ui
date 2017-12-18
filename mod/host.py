@@ -667,9 +667,15 @@ class Host(object):
                 bpm = body['bpm']
             except:
                 return json.dumps({'error', 'missing bpm value'}).encode('utf-8')
-            if bpm != self.transport_bpm:
-                self.set_transport_bpm(bpm, True)
-            ret_val['okay'] = True
+            instance_id = self.mapper.get_id('/pedalboard')
+            pluginData  = self.plugins.get(instance_id, None)
+            self.set_transport_bpm(bpm, True)
+            if ':bpm' in pluginData['addressings']:
+                old = pluginData['addressings'][':bpm']
+                response = yield self.address("/pedalboard", ":bpm", old['actuator_uri'], old['label'], old['minimum'], old['maximum'], bpm, old['steps'])
+                ret_val['okay'] = response
+            else:
+                ret_val['okay'] = True
         elif command == 'get_bank':
             if self.bank_id > 0 and self.bank_id <= len(self.banks):
                 ret_val['bank'] = self.banks[self.bank_id - 1]
@@ -705,7 +711,7 @@ class Host(object):
             except:
                 return json.dumps({'error', 'missing id value'}).encode('utf-8')
             # for some reason we expect base 1 banks (because 0 is a special case) but base 0 pedalboards
-            ok = yield gen.Task(self.load_bank_pedalboard, self.bank_id + 1, pedalboard)
+            ok = yield gen.Task(self.load_bank_pedalboard, self.bank_id, pedalboard)
             ret_val['okay'] = ok
         else:
             ret_val['error'] = 'unknown command'
@@ -2903,19 +2909,21 @@ _:b%i
     # Addressing (public stuff)
 
     @gen.coroutine
-    def address(self, instance, portsymbol, actuator_uri, label, minimum, maximum, value, steps, callback):
+    def address(self, instance, portsymbol, actuator_uri, label, minimum, maximum, value, steps, callback=lambda r:None):
         instance_id = self.mapper.get_id(instance)
         pluginData  = self.plugins.get(instance_id, None)
 
         if pluginData is None:
             print("ERROR: Trying to address non-existing plugin instance %i: '%s'" % (instance_id, instance))
             callback(False)
-            return
+            return False
 
         # MIDI learn is not saved until a MIDI controller is moved.
         # So we need special casing for unlearn.
         if actuator_uri == kMidiUnlearnURI:
-            return self.send_modified("midi_unmap %d %s" % (instance_id, portsymbol), callback, datatype='boolean')
+            val = yield gen.Task(self.send_modified, "midi_unmap %d %s" % (instance_id, portsymbol), datatype='boolean')
+            callback(val)
+            return val
 
         old_addressing = pluginData['addressings'].pop(portsymbol, None)
 
@@ -2951,12 +2959,14 @@ _:b%i
                                                                                           channel, controller,
                                                                                           minimum, maximum)
 
-                        return self.send_modified("midi_map %d %s %i %i %f %f" % (instance_id,
-                                                                                  portsymbol,
-                                                                                  channel,
-                                                                                  controller,
-                                                                                  minimum,
-                                                                                  maximum), callback, datatype='boolean')
+                        val = yield gen.Task(self.send_modified, "midi_map %d %s %i %i %f %f" % (instance_id,
+                                                                                                 portsymbol,
+                                                                                                 channel,
+                                                                                                 controller,
+                                                                                                 minimum,
+                                                                                                 maximum), datatype='boolean')
+                        callback(val)
+                        return val
 
             self.addressings.remove(old_addressing)
             self.pedalboard_modified = True
@@ -2967,19 +2977,21 @@ _:b%i
 
         if not actuator_uri or actuator_uri == kNullAddressURI:
             callback(True)
-            return
+            return True
 
         if self.addressings.is_hmi_actuator(actuator_uri) and not self.hmi.initialized:
             print("WARNING: Cannot address to HMI at this point")
             callback(False)
-            return
+            return False
 
         # MIDI learn is not an actual addressing
         if actuator_uri == kMidiLearnURI:
-            return self.send_notmodified("midi_learn %d %s %f %f" % (instance_id,
-                                                                     portsymbol,
-                                                                     minimum,
-                                                                     maximum), callback, datatype='boolean')
+            val = yield gen.Task(self.send_notmodified, "midi_learn %d %s %f %f" % (instance_id,
+                                                                                    portsymbol,
+                                                                                    minimum,
+                                                                                    maximum), datatype='boolean')
+            callback(val)
+            return val
 
         if value < minimum:
             value = minimum
@@ -2994,7 +3006,7 @@ _:b%i
                                           label, minimum, maximum, steps, value)
         if addressing is None:
             callback(False)
-            return
+            return False
 
         if needsValueChange:
             yield gen.Task(self.hmi_parameter_set, instance_id, portsymbol, value)
@@ -3002,7 +3014,9 @@ _:b%i
         pluginData['addressings'][portsymbol] = addressing
 
         self.pedalboard_modified = True
-        self.addressings.load_addr(actuator_uri, addressing, callback)
+        val = yield gen.Task(self.addressings.load_addr, actuator_uri, addressing)
+        callback(val)
+        return val
 
     # -----------------------------------------------------------------------------------------------------------------
     # HMI callbacks, called by HMI via serial

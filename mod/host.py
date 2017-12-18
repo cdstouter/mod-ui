@@ -1790,14 +1790,14 @@ class Host(object):
     def pedalpreset_load(self, idx, callback=lambda r:None):
         if idx < 0 or idx >= len(self.pedalboard_presets):
             callback(False)
-            return
+            return False
 
         pedalpreset = self.pedalboard_presets[idx]
 
         if pedalpreset is None:
             print("ERROR: Asked to load an invalid pedalboard preset, number", idx)
             callback(False)
-            return
+            return False
 
         self.pedalboard_preset = idx
 
@@ -1853,6 +1853,7 @@ class Host(object):
         callback(True)
 
         self.msg_callback("pedal_preset %d" % idx)
+        return True
 
     # -----------------------------------------------------------------------------------------------------------------
     # Host stuff - connections

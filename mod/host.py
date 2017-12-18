@@ -137,6 +137,7 @@ class ModMidiServer(TCPServer):
                 data = yield stream.read_until(b"\n")
                 return_data = yield self.message_handler(data)
                 yield stream.write(return_data)
+                yield stream.write(b"\n")
             except iostream.StreamClosedError:
                 print('ModMidiServer stream closed')
                 break

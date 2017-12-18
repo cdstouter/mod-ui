@@ -1801,7 +1801,7 @@ class Host(object):
 
         self.pedalboard_preset = idx
 
-        used_actuators = []
+        #used_actuators = []
 
         for instance, data in pedalpreset['data'].items():
             instance = "/graph/%s" % instance
@@ -1849,7 +1849,7 @@ class Host(object):
                 self.msg_callback("param_set %s :bypass 0.0" % (instance,))
                 self.bypass(instance, False, None)
 
-        self.addressings.load_current(used_actuators, (PEDALBOARD_INSTANCE_ID, ":presets"))
+        #self.addressings.load_current(used_actuators, (PEDALBOARD_INSTANCE_ID, ":presets"))
         callback(True)
 
         self.msg_callback("pedal_preset %d" % idx)
